@@ -5,8 +5,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Precious Metals Dashboard | Gold, Silver, Copper, Platinum',
-  description: 'Real-time precious metals prices, sentiment analysis, and market insights for Gold, Silver, Copper, and Platinum.',
+  title: 'Precious Metals Sentiment | Gold, Silver, Copper, Platinum',
+  description: 'Real-time sentiment analysis from Reddit and news for Gold, Silver, Copper, and Platinum markets.',
 };
 
 export default function RootLayout({
@@ -29,17 +29,14 @@ export default function RootLayout({
                       Precious Metals
                     </h1>
                     <p className="text-xs text-gray-500">
-                      Sentiment Dashboard
+                      Sentiment Tracker
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  <div className="text-sm text-gray-500">
-                    Prices in USD
-                  </div>
+                <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                  <span className="text-sm text-gray-500">Live</span>
+                  <span className="text-sm text-gray-500">Live from Reddit</span>
                 </div>
               </div>
             </div>
@@ -54,7 +51,7 @@ export default function RootLayout({
           <footer className="border-t border-gray-200 mt-8">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
               <p className="text-center text-sm text-gray-500">
-                Data refreshes every 5 minutes. Prices are for informational purposes only.
+                Sentiment data from Reddit communities and news sources. Refreshes every 5 minutes.
               </p>
             </div>
           </footer>

@@ -1,40 +1,26 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import PriceCard from '@/components/PriceCard';
 import SentimentGauge from '@/components/SentimentGauge';
-import PriceChart from '@/components/PriceChart';
 import NewsPanel from '@/components/NewsPanel';
-import { MetalPrice, MetalType, SentimentData, NewsItem } from '@/types';
+import { SentimentData, NewsItem } from '@/types';
 import { RefreshCw } from 'lucide-react';
 
 export default function Dashboard() {
-  const [prices, setPrices] = useState<MetalPrice[]>([]);
   const [sentiment, setSentiment] = useState<SentimentData | null>(null);
   const [news, setNews] = useState<NewsItem[]>([]);
-  const [selectedMetal, setSelectedMetal] = useState<MetalType>('gold');
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      // Fetch prices and sentiment in parallel
-      const [pricesRes, sentimentRes] = await Promise.all([
-        fetch('/api/prices'),
-        fetch('/api/sentiment'),
-      ]);
+      const response = await fetch('/api/sentiment');
+      const data = await response.json();
 
-      const pricesData = await pricesRes.json();
-      const sentimentData = await sentimentRes.json();
-
-      if (pricesData.success) {
-        setPrices(pricesData.prices);
-      }
-
-      if (sentimentData.success) {
-        setSentiment(sentimentData.sentiment);
-        setNews(sentimentData.news);
+      if (data.success) {
+        setSentiment(data.sentiment);
+        setNews(data.news);
       }
 
       setLastUpdated(new Date());
@@ -54,9 +40,10 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Refresh button */}
+      {/* Header with refresh */}
       <div className="flex items-center justify-between">
         <div>
+          <h2 className="text-2xl font-bold text-gray-900">Market Sentiment</h2>
           {lastUpdated && (
             <p className="text-sm text-gray-500">
               Last updated: {lastUpdated.toLocaleTimeString()}
@@ -73,49 +60,24 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Price cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {prices.map((price) => (
-          <PriceCard
-            key={price.metal}
-            data={price}
-            isSelected={price.metal === selectedMetal}
-            onClick={() => setSelectedMetal(price.metal)}
-          />
-        ))}
-
-        {/* Loading skeletons */}
-        {isLoading && prices.length === 0 && (
-          <>
-            {[1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="h-40 bg-white rounded-xl border border-gray-100 animate-pulse"
-              />
-            ))}
-          </>
-        )}
-      </div>
-
-      {/* Main content grid */}
+      {/* Main content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Sentiment gauge */}
         <div className="lg:col-span-1">
           {sentiment ? (
             <SentimentGauge data={sentiment} />
           ) : (
-            <div className="h-96 bg-white rounded-xl border border-gray-100 animate-pulse" />
+            <div className="h-96 bg-white rounded-xl border border-gray-100 animate-pulse flex items-center justify-center">
+              <span className="text-gray-400">Loading sentiment...</span>
+            </div>
           )}
         </div>
 
-        {/* Price chart */}
+        {/* News panel */}
         <div className="lg:col-span-2">
-          <PriceChart selectedMetal={selectedMetal} />
+          <NewsPanel news={news} />
         </div>
       </div>
-
-      {/* News panel */}
-      <NewsPanel news={news} />
     </div>
   );
 }
