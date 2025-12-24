@@ -33,9 +33,7 @@ function analyzeText(text: string): { score: number; sentiment: 'bullish' | 'neu
     if (lowerText.includes(keyword)) score -= 10;
   });
 
-  // Clamp between -100 and 100
   score = Math.max(-100, Math.min(100, score));
-
   const sentiment = score > 10 ? 'bullish' : score < -10 ? 'bearish' : 'neutral';
   return { score, sentiment };
 }
@@ -52,20 +50,19 @@ function detectMetals(text: string): MetalType[] {
   if (lowerText.includes('copper') || lowerText.includes('xcu')) metals.push('copper');
   if (lowerText.includes('platinum') || lowerText.includes('xpt')) metals.push('platinum');
 
-  // If no specific metal mentioned, assume it's about precious metals in general
   if (metals.length === 0 && (lowerText.includes('metal') || lowerText.includes('commodity'))) {
     return ['gold', 'silver', 'platinum'];
   }
 
-  return metals.length > 0 ? metals : ['gold']; // Default to gold
+  return metals.length > 0 ? metals : ['gold'];
 }
 
 /**
  * Fetch Reddit posts from precious metals subreddits
  */
-async function fetchRedditSentiment(): Promise<{ score: number; posts: string[] }> {
+async function fetchRedditSentiment(): Promise<{ score: number; posts: any[] }> {
   const subreddits = ['Gold', 'Silverbugs', 'WallStreetSilver', 'commodities'];
-  const posts: string[] = [];
+  const posts: any[] = [];
   let totalScore = 0;
   let postCount = 0;
 
@@ -86,15 +83,26 @@ async function fetchRedditSentiment(): Promise<{ score: number; posts: string[] 
       const children = data?.data?.children || [];
 
       for (const post of children) {
-        const title = post?.data?.title || '';
-        const selftext = post?.data?.selftext || '';
+        const postData = post?.data;
+        if (!postData) continue;
+
+        const title = postData.title || '';
+        const selftext = postData.selftext || '';
         const fullText = `${title} ${selftext}`;
+        const permalink = postData.permalink || '';
+        const created = postData.created_utc || Date.now() / 1000;
 
         if (fullText.length > 10) {
           const { score } = analyzeText(fullText);
           totalScore += score;
           postCount++;
-          posts.push(title);
+
+          posts.push({
+            title,
+            url: `https://www.reddit.com${permalink}`,
+            source: `r/${subreddit}`,
+            created: new Date(created * 1000).toISOString(),
+          });
         }
       }
     } catch (error) {
@@ -103,7 +111,7 @@ async function fetchRedditSentiment(): Promise<{ score: number; posts: string[] 
   }
 
   const avgScore = postCount > 0 ? Math.round(totalScore / postCount) : 0;
-  return { score: avgScore, posts: posts.slice(0, 5) };
+  return { score: avgScore, posts: posts.slice(0, 10) };
 }
 
 /**
@@ -111,8 +119,7 @@ async function fetchRedditSentiment(): Promise<{ score: number; posts: string[] 
  */
 async function fetchNewsAPI(): Promise<NewsItem[]> {
   if (!NEWS_API_KEY) {
-    console.log('NewsAPI key not configured, using fallback');
-    return fetchFallbackNews();
+    return [];
   }
 
   try {
@@ -122,14 +129,13 @@ async function fetchNewsAPI(): Promise<NewsItem[]> {
     );
 
     if (!response.ok) {
-      console.error('NewsAPI error:', response.status);
-      return fetchFallbackNews();
+      return [];
     }
 
     const data = await response.json();
 
     if (!data.articles || data.articles.length === 0) {
-      return fetchFallbackNews();
+      return [];
     }
 
     return data.articles.map((article: any, index: number) => {
@@ -137,7 +143,7 @@ async function fetchNewsAPI(): Promise<NewsItem[]> {
       return {
         id: `news-${index}-${Date.now()}`,
         title: article.title,
-        source: article.source?.name || 'Unknown',
+        source: article.source?.name || 'News',
         url: article.url,
         publishedAt: article.publishedAt,
         sentiment,
@@ -146,112 +152,26 @@ async function fetchNewsAPI(): Promise<NewsItem[]> {
     });
   } catch (error) {
     console.error('NewsAPI fetch failed:', error);
-    return fetchFallbackNews();
+    return [];
   }
 }
 
 /**
- * Fallback: Fetch from Google News RSS (no API key needed)
+ * Convert Reddit posts to NewsItem format
  */
-async function fetchFallbackNews(): Promise<NewsItem[]> {
-  try {
-    // Use a simple news aggregator approach
-    const searches = ['gold+price', 'silver+price', 'platinum+price', 'copper+price'];
-    const allNews: NewsItem[] = [];
-
-    for (const search of searches) {
-      try {
-        const response = await fetch(
-          `https://news.google.com/rss/search?q=${search}&hl=en-US&gl=US&ceid=US:en`
-        );
-
-        if (!response.ok) continue;
-
-        const text = await response.text();
-
-        // Simple XML parsing for RSS
-        const titleMatches = text.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/g) || [];
-        const linkMatches = text.match(/<link>(https:\/\/news\.google\.com\/rss\/articles\/[^<]+)<\/link>/g) || [];
-        const pubDateMatches = text.match(/<pubDate>([^<]+)<\/pubDate>/g) || [];
-
-        for (let i = 1; i < Math.min(titleMatches.length, 3); i++) {
-          const title = titleMatches[i]?.replace(/<title><!\[CDATA\[|\]\]><\/title>/g, '') || '';
-          const url = linkMatches[i]?.replace(/<\/?link>/g, '') || '#';
-          const pubDate = pubDateMatches[i]?.replace(/<\/?pubDate>/g, '') || new Date().toISOString();
-
-          if (title) {
-            const { sentiment } = analyzeText(title);
-            allNews.push({
-              id: `fallback-${allNews.length}-${Date.now()}`,
-              title,
-              source: 'Google News',
-              url,
-              publishedAt: new Date(pubDate).toISOString(),
-              sentiment,
-              relevantMetals: detectMetals(title),
-            });
-          }
-        }
-      } catch (e) {
-        continue;
-      }
-    }
-
-    // If we got news, return it
-    if (allNews.length > 0) {
-      return allNews.slice(0, 6);
-    }
-
-    // Ultimate fallback: return static recent headlines
-    return getStaticNews();
-  } catch (error) {
-    return getStaticNews();
-  }
-}
-
-/**
- * Static news as last resort
- */
-function getStaticNews(): NewsItem[] {
-  const now = Date.now();
-  return [
-    {
-      id: 'static-1',
-      title: 'Gold holds steady as markets await Federal Reserve decision',
-      source: 'Market Watch',
-      url: '#',
-      publishedAt: new Date(now - 3600000).toISOString(),
-      sentiment: 'neutral',
-      relevantMetals: ['gold'],
-    },
-    {
-      id: 'static-2',
-      title: 'Silver demand continues to rise from solar panel industry',
-      source: 'Reuters',
-      url: '#',
-      publishedAt: new Date(now - 7200000).toISOString(),
-      sentiment: 'bullish',
-      relevantMetals: ['silver'],
-    },
-    {
-      id: 'static-3',
-      title: 'Copper prices react to global manufacturing data',
-      source: 'Bloomberg',
-      url: '#',
-      publishedAt: new Date(now - 10800000).toISOString(),
-      sentiment: 'neutral',
-      relevantMetals: ['copper'],
-    },
-    {
-      id: 'static-4',
-      title: 'Platinum market sees increased investor interest',
-      source: 'Kitco',
-      url: '#',
-      publishedAt: new Date(now - 14400000).toISOString(),
-      sentiment: 'bullish',
-      relevantMetals: ['platinum'],
-    },
-  ];
+function redditPostsToNews(posts: any[]): NewsItem[] {
+  return posts.map((post, index) => {
+    const { sentiment } = analyzeText(post.title);
+    return {
+      id: `reddit-${index}-${Date.now()}`,
+      title: post.title,
+      source: post.source,
+      url: post.url,
+      publishedAt: post.created,
+      sentiment,
+      relevantMetals: detectMetals(post.title),
+    };
+  });
 }
 
 /**
@@ -262,20 +182,26 @@ export async function calculateSentiment(): Promise<{
   news: NewsItem[];
 }> {
   // Fetch from both sources in parallel
-  const [redditData, newsItems] = await Promise.all([
+  const [redditData, newsApiItems] = await Promise.all([
     fetchRedditSentiment(),
     fetchNewsAPI(),
   ]);
 
+  // Convert Reddit posts to news format
+  const redditNews = redditPostsToNews(redditData.posts);
+
+  // Combine news sources (NewsAPI first if available, then Reddit)
+  const allNews = [...newsApiItems, ...redditNews].slice(0, 8);
+
   // Calculate news sentiment score
   let newsScore = 0;
-  newsItems.forEach((item) => {
+  allNews.forEach((item) => {
     if (item.sentiment === 'bullish') newsScore += 15;
     else if (item.sentiment === 'bearish') newsScore -= 15;
   });
   newsScore = Math.max(-100, Math.min(100, newsScore));
 
-  // Reddit social score
+  // Reddit social score (from post analysis)
   const socialScore = redditData.score;
 
   // Momentum score (placeholder - would come from price data)
@@ -300,6 +226,6 @@ export async function calculateSentiment(): Promise<{
       },
       lastUpdated: new Date().toISOString(),
     },
-    news: newsItems,
+    news: allNews,
   };
 }
